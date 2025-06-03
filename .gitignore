@@ -1,0 +1,3 @@
+isadora/sfx/*
+isadora/video/*
+!.gitkeep
