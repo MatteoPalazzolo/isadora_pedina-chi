@@ -1,6 +1,12 @@
+/*
+// LED
+#include <Adafruit_NeoPixel.h> // FastLED && Adafruit NeoPixel Libraries
+#ifdef __AVR__
+#include <avr/power.h> // Required for 16 MHz Adafruit Trinket
+#endif
 
-#define LED_PIN 13  // Arduino pin that connects to WS2812B
-#define LED_COUNT 62  // The number of LEDs (pixels) on WS2812B
+#define LED_PIN 12  // Arduino pin that connects to WS2812B
+#define LED_COUNT 14  // The number of LEDs (pixels) on WS2812B
 
 Adafruit_NeoPixel WS2812B(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -62,3 +68,4 @@ void loop() {
   ledAnimationWrongCode();
   delay(5000);
 }
+*/

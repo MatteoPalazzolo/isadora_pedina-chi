@@ -34,9 +34,12 @@
 #define PASSWORD "tM4qXXCk3Rr9ytax"
 #define PORT 8080
 
-// LED 
-#define LED_PIN 13
-#define LED_COUNT 62
+// LED BORDI
+#define LED_BORDI_PIN 13
+#define LED_BORDI_COUNT 54
+// LED SCRITTA
+#define LED_SCRITTA_PIN 12
+#define LED_SCRITTA_COUNT 14
 
 MFRC522 rfid1(SS_1, RST_PIN);
 MFRC522 rfid2(SS_2, RST_PIN);
@@ -46,7 +49,88 @@ int checkReader(MFRC522 &reader, int placeId);
 WiFiServer server(PORT);
 WiFiClient client;
 
-Adafruit_NeoPixel WS2812B(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ledBordi(LED_BORDI_COUNT, LED_BORDI_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ledScritta(LED_SCRITTA_COUNT, LED_SCRITTA_PIN, NEO_GRB + NEO_KHZ800);
+
+bool active = false;
+bool waitForAck = false;
+
+void onActiveTrue() {
+  // scritta
+  for (int pixel = 0; pixel < LED_SCRITTA_COUNT; pixel++) {
+    ledScritta.setPixelColor(pixel, 255, 255, 255);
+  }
+  ledScritta.show();
+  // bordi
+  ledAnimationPowerOn();
+}
+
+void onActiveFalse() {
+  ledScritta.clear();
+  ledScritta.show();
+  ledBordi.clear();
+  ledBordi.show();
+}
+
+void ledAnimationPowerOn() {
+  ledBordi.clear();
+  const int z = 2; 
+  for (int k = 0; k < 10; k++) {
+    for (int j = 0; j < z; j++) {
+      for (int i = 0; i < LED_BORDI_COUNT; i++) {
+        if (i % z == j) {
+          ledBordi.setPixelColor(i, ledBordi.Color(221, 85, 255)); // pink
+        } else {
+          // ledBordi.setPixelColor(i, ledBordi.Color(84, 94, 178)); // purple
+          ledBordi.setPixelColor(i, ledBordi.Color(65, 225, 90)); // green
+        }
+      }
+      ledBordi.show();
+      delay(500);
+    }
+  }
+  ledBordi.clear();
+  ledBordi.show();
+
+}
+
+bool flip = false;
+void handleAck(int ack) {
+  if (ack == 0) {
+    // cambio di led, ma neutro
+    flip = !flip;
+    for (int i = 0; i < LED_BORDI_COUNT; i++) {
+      if (i % 2 == flip) {
+        ledBordi.setPixelColor(i, ledBordi.Color(221, 85, 255)); // pink
+      } else {
+        ledBordi.setPixelColor(i, ledBordi.Color(65, 225, 90)); // green
+      }
+    }
+    ledBordi.show();
+  }
+  else if (ack == 1) {
+    // cambio di led a rosso
+    for (int pixel = 0; pixel < LED_BORDI_COUNT; pixel++) {
+      ledBordi.setPixelColor(pixel, 221, 85, 255);
+    }
+    ledBordi.show();
+  }
+  else if (ack == 2) {
+    // cambio di led a verde
+    for (int pixel = 0; pixel < LED_BORDI_COUNT; pixel++) {
+      ledBordi.setPixelColor(pixel, 54, 176, 74);
+    }
+    ledBordi.show();
+
+    delay(1000);
+
+    active = false;
+    onActiveFalse();
+    digitalWrite(2, LOW);
+    Serial.println("System: OFF");
+
+  }
+}
 
 void setupWiFi() {
   pinMode(2, OUTPUT);
@@ -88,14 +172,23 @@ void setupNFC() {
 }
 
 void setupLED() {
-  WS2812B.begin();
-  WS2812B.setBrightness(3);
+  // scritta
+  ledScritta.begin();
+  ledScritta.setBrightness(75);
+  ledScritta.clear();
+  ledScritta.show();
+  // bordi
+  ledBordi.begin();
+  ledBordi.setBrightness(10);
+  ledBordi.clear();
+  ledBordi.show();
 }
 
 void setup() {
   Serial.begin(9600);
   setupWiFi();
   setupNFC();
+  setupLED();
 }
 
 void sendTCP(String msg) {
@@ -127,7 +220,7 @@ int checkReader(MFRC522 &reader, int placeId) {
     if (reader.uid.uidByte[i] < 0x10) uid += "0";
     uid += String(reader.uid.uidByte[i], HEX);
   }
-  Serial.println(uid);
+  // Serial.println(uid);
 
   if (uid == "04a1c53cc12a81") {
     placeId += ID_ROSA;
@@ -149,11 +242,10 @@ int checkReader(MFRC522 &reader, int placeId) {
   
 }
 
-bool active = false;
 String lastCode = "";
-void loop() {
-  delay(250); //TODO
+unsigned long pingMillis = 0;
 
+void loop() {
   // se non c'è nessun client connesso prova a connetterti
   if (!client || !client.connected()) {
     client = server.available();
@@ -165,9 +257,13 @@ void loop() {
     }
   }
 
-  sendTCP("PING");
+  // assicurati di mandare un PING ogni 20 sec per evitare che la connessione si chiuda
+  if (millis() - pingMillis >= 20000) {
+    sendTCP("PING");
+    pingMillis = millis();
+  }
 
-  // controlla se il client sta avviando o spegnendo il server
+  // controlla se il client sta comunicando
   if (client.available()) {
     String msg = client.readStringUntil('\n');
     msg.trim();
@@ -175,16 +271,24 @@ void loop() {
     Serial.print("RCV: ");
     Serial.println(msg);
 
-    if (msg.startsWith("on") && !active) {
+    if (msg.startsWith("POWER:ON") && !active) {
       active = true;
+      onActiveTrue();
       digitalWrite(2, HIGH);
       Serial.println("System: ON");
       sendTCP("ACK:7");
-    } else if (msg.startsWith("off") && active) {
+    } else if (msg.startsWith("POWER:OFF") && active) {
       active = false;
+      onActiveFalse();
       digitalWrite(2, LOW);
       Serial.println("System: OFF");
       sendTCP("ACK:6");
+    } else if (msg.startsWith("ACK:") && active && waitForAck) {
+      int sepIndex = msg.indexOf(':');
+      String ackStr = msg.substring(sepIndex + 1);
+      ackStr.trim();
+      handleAck(ackStr.toInt());
+      waitForAck = false;
     }
     
   }
@@ -198,9 +302,11 @@ void loop() {
   int read3 = checkReader(rfid3, 0);
 
   String code = String(read1) + String(read2) + String(read3);
-  if (code != lastCode) {
+  if (code != lastCode && !waitForAck) {
     lastCode = code;
     Serial.println(code);
     sendTCP("CODE:" + code);
+    waitForAck = true;
   }
+
 }
