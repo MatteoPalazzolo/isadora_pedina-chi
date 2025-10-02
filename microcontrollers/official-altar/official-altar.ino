@@ -111,7 +111,7 @@ void handleAck(int ack) {
   else if (ack == 1) {
     // cambio di led a rosso
     for (int pixel = 0; pixel < LED_BORDI_COUNT; pixel++) {
-      ledBordi.setPixelColor(pixel, 221, 85, 255);
+      ledBordi.setPixelColor(pixel, 231, 21, 77);
     }
     ledBordi.show();
   }
